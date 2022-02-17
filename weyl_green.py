@@ -47,7 +47,7 @@ def WeylHamiltonian(size,kx,kz,tx,ty,tz,g):
     """
     # diagonals
     diags_x = np.asarray([tx * np.sin(kx) for _ in range(size)])
-    diags_z = np.asarray([tz * (2 + g - np.cos(kx) + np.sin(kz)) for _ in range(size)])
+    diags_z = np.asarray([tz * (2 + g - np.cos(kx) - np.cos(kz)) for _ in range(size)])
 
     diag_x = np.kron(np.diag(diags_x),Pauli(1)) 
     diag_z = np.kron(np.diag(diags_z),Pauli(3)) 
@@ -112,15 +112,26 @@ def FullHamiltonian(size,kx,kz,t,g,mu,m,r):
 
     return MAT
 
-def FullSpectralFunction(w,size,kx,kz,t,g,mu,m,r):
+def FullSpectralFunction(w,size,kx,kz,t,g,mu,m,r,spin=0):
     """
     Full spectral function calculation
     """
     # compute Green function
     G = np.linalg.inv(w * np.eye(2 * size) - FullHamiltonian(size,kx,kz,t,g,mu,m,r))
 
-    # compute spectral function
-    A = -1 / np.pi * 1/(2*1j)*np.trace(G-G.conj().T)
+    # both spins summed over
+    if spin == 0:
+        A = - 1 / np.pi * np.imag(np.trace(G))
+
+    # only up spin
+    if spin == 1:
+        G_up = np.diag(G)[::2]
+        A = - 1 / np.pi * np.imag(np.sum(G_up))
+
+    # only down spin
+    if spin == -1:
+        G_down = np.diag(G)[1::2]
+        A = - 1 / np.pi * np.imag(np.sum(G_down))
 
     return A
 
@@ -205,14 +216,26 @@ def GeffMetal(w,size,kx,kz,t,g,mu,m,r):
 
 # Plotting tools
 
-def SpectralFunctionWeyl(w,size,kx,kz,t,g,mu,m,r):
+def SpectralFunctionWeyl(w,size,kx,kz,t,g,mu,m,r,spin=0):
     """
     Computes the spectral function of a Green function
     A finite delta can be included in w -> w + 1j*0.01
     """
     G = GeffWeyl(w,size,kx,kz,t,g,mu,m,r)
 
-    A = - 1 / np.pi * np.imag(np.trace(G))
+    # both spins summed over
+    if spin == 0:
+        A = - 1 / np.pi * np.imag(np.trace(G))
+
+    # only up spin
+    if spin == 1:
+        G_up = np.diag(G)[::2]
+        A = - 1 / np.pi * np.imag(np.sum(G_up))
+
+    # only down spin
+    if spin == -1:
+        G_down = np.diag(G)[1::2]
+        A = - 1 / np.pi * np.imag(np.sum(G_down))
 
     return A
 
@@ -340,45 +363,69 @@ def GSurfaceWeyl(w,size,kx,kz,t,g,mu,m,r,side=0):
     GW = GeffWeyl(w,size,kx,kz,t,g,mu,m,r)
 
     # diagonalize
-    Gs , Ws = ssl.eigs(GW, k=int(2*size), return_eigenvectors=True)
+    # Gs , Ws = ssl.eigs(GW, k=int(2*size), return_eigenvectors=True)
 
     # Localization condition
-    localized_bool = Localized(Ws,side)
+    # localized_bool = Localized(Ws,side)
 
     # make G with only localized states
     G = np.diag(Gs[localized_bool])
 
     return G
 
-def SurfaceSpectralFunctionWeyl2(w,size,kx,kz,t,g,mu,m,r,side=0):
-    """
-    Returns the *effective* surface Green function
-    """
-    # Hamiltonian
-    H = FullHamiltonian(size,kx,kz,t,g,mu,m,r)
-
-    # diagonalize
-    Es, Ws = ssl.eigsh(H, k=int(2*size), return_eigenvectors=True)
-
-    # sum over spin
-    Ws_ns = np.array([sum(np.abs(Ws[i:i+2,:])**2) for i in range(0, int(2*size), 2)])
-
-    # Green function sum
-    G = 0
-    for i in range(size):
-        G += 1/(w - Es[i]) * (Ws_ns[0*(int(size/2)-1),i] + Ws_ns[1,i] + Ws_ns[2,i]+Ws_ns[3,i])
-    
-    # spectral function (already traced over spins)
-    A = -1 / np.pi * np.imag(G)
-
-    return A
-
-def SurfaceSpectralFunctionWeyl(w,size,kx,kz,t,g,mu,m,r,side=0):
+def SurfaceSpectralFunctionWeyl(w,size,kx,kz,t,g,mu,m,r,side=0,spin=1):
     """
     Surface spectral function for WSM-Metal system
     """
-    G = GSurfaceWeyl(w,size,kx,kz,t,g,mu,m,r,side)
-    A = - 1 / np.pi * np.imag(np.trace(G))
+    G = GeffWeyl(w,size,kx,kz,t,g,mu,m,r)
+    edge = int(size/10)
+
+    def G_summ(spin,base,sgn,edge):
+        # computes G_sum for given spin and side (base,sgn)
+        # both spins
+        if spin == 0:
+            G_sum = G[base,base]+G[base+sgn*1,base+sgn*1]
+            # add remaining edge states
+            for i in range(1,edge):
+                G_sum += G[base + sgn * (2*i),base + sgn * (2*i)] + G[base + sgn * (2*i+1),base + sgn * (2*i+1)]
+        # spin up
+        elif spin == +1:
+            G_sum = G[base,base]
+            # add remaining edge states
+            for i in range(1,edge):
+                G_sum += G[base + sgn * (2*i),base + sgn * (2*i)]
+        # spin down
+        elif spin == -1:
+            G_sum = G[base+sgn*1,base+sgn*1]
+            # add remaining edge states
+            for i in range(1,edge):
+                G_sum += G[base + sgn * (2*i+1),base + sgn * (2*i+1)]
+        return G_sum
+
+    # left side
+    if side == 0:
+        # combine both cases
+        G_sum = G_summ(spin,0,+1,edge) + G_summ(spin,size-1,-1,edge)
+
+    elif side == -1:
+        # we start from
+        base = 0
+        # and we add
+        sgn = +1
+        # G_sum
+        G_sum = G_summ(spin,base,sgn,edge)
+
+    # right side
+    elif side == 1:
+        # we start from
+        base = size-1
+        # and we subtract
+        sgn = -1
+        # G_sum
+        G_sum = G_summ(spin,base,sgn,edge)
+
+    A = - 1 / np.pi * np.imag(G_sum)
+
     return A
 
 # Plotting tools
@@ -400,23 +447,6 @@ def SurfaceSpectralFunctionWeylWK(size,res,kx,kz,t,g,mu,m,r,side=0):
 
     return As
 
-def SurfaceSpectralFunctionWeylWK2(size,res,kx,kz,t,g,mu,m,r,side=0):
-    """
-    Makes array for Surface spectral function plotted as W vs. K
-    """
-    # set up arrays
-    ws = np.linspace(-2,2,num=res)
-
-    As = np.zeros((res),dtype=float)
-
-    # loop over them
-    for i in range(len(ws)):
-        w = ws[i] + 1j * 0.05
-        A = SurfaceSpectralFunctionWeyl2(w,size,kx,kz,t,g,mu,m,r,side)
-        As[i] = A
-
-    return As
-
 def SurfaceSpectralFunctionWeylKK(w,size,res,kx,t,g,mu,m,r,side=0):
     """
     Makes array for Surface spectral function plotted as kx vs. kz
@@ -430,23 +460,6 @@ def SurfaceSpectralFunctionWeylKK(w,size,res,kx,t,g,mu,m,r,side=0):
     for i in range(len(kzs)):
         kz = kzs[i]
         A = SurfaceSpectralFunctionWeyl(w,size,kx,kz,t,g,mu,m,r,side)
-        As[i] = A
-
-    return As
-
-def SurfaceSpectralFunctionWeylKK2(w,size,res,kx,t,g,mu,m,r,side=0):
-    """
-    Makes array for Surface spectral function plotted as kx vs. kz
-    """
-    # set up arrays
-    kzs = np.linspace(-np.pi,np.pi,num=res)
-
-    As = np.zeros((res),dtype=float)
-
-    # loop over them
-    for i in range(len(kzs)):
-        kz = kzs[i]
-        A = SurfaceSpectralFunctionWeyl2(w,size,kx,kz,t,g,mu,m,r,side)
         As[i] = A
 
     return As
@@ -562,7 +575,6 @@ if __name__ == "__main__":
     
     np.savetxt("spectral_function_KK_{}.csv".format(k_idx), AsFullK, delimiter = ",")
     np.savetxt("spectral_function_WK_{}.csv".format(k_idx), AsFullW, delimiter = ",")
-
 
 
 ### LPBG
