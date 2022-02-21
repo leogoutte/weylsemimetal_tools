@@ -112,6 +112,20 @@ def FullHamiltonian(size,kx,kz,t,g,mu,m,r):
 
     return MAT
 
+def Spectrum(size,kz,t,g,mu,m,r):
+    """
+    Energy spectrum for FullHamiltonian
+    """
+    res=100
+    kxs = np.linspace(-np.pi,np.pi,res)
+    Es = np.zeros((2*size,res),dtype=float)
+    for i in range(res):
+        kx=kxs[i]
+        H = FullHamiltonian(size,kx,kz,t,g,mu,m,r)
+        E = np.linalg.eigvalsh(H)
+        Es[:,i] = E
+    return kxs, Es.T
+
 def FullSpectralFunction(w,size,kx,kz,t,g,mu,m,r,spin=0):
     """
     Full spectral function calculation
@@ -250,19 +264,19 @@ def SpectralFunctionMetal(w,size,kx,kz,t,g,mu,m,r):
 
     return A
 
-def SpectralFunctionWeylWK(size,res,kx,kz,t=1,g=0,mu=0,m=0.5,r=0.5):
+def SpectralFunctionWeylWK(size,res,kx,kz,t=1,g=0,mu=0,m=0.5,r=0.5,spin=0):
     """
     Return array for plot as a function of energy and momnetum
     """
     # set up arrays
-    ws = np.linspace(-2,2,num=res)
+    ws = np.linspace(-0.8,0.8,num=res)
 
     As = np.zeros((res),dtype=float)
 
     # loop over them
     for i in range(len(ws)):
         w = ws[i] + 1j * 0.05 
-        A = SpectralFunctionWeyl(w,size,kx,kz,t,g,mu,m,r)
+        A = SpectralFunctionWeyl(w,size,kx,kz,t,g,mu,m,r,spin)
         As[i] = A
 
     return As
@@ -355,29 +369,67 @@ def Localized(wave,side=0):
     elif side == -1:
         return left
 
-def GSurfaceWeyl(w,size,kx,kz,t,g,mu,m,r,side=0):
-    """
-    Returns the *effective* surface Green function
-    """
-    # effective Green function
-    GW = GeffWeyl(w,size,kx,kz,t,g,mu,m,r)
-
-    # diagonalize
-    # Gs , Ws = ssl.eigs(GW, k=int(2*size), return_eigenvectors=True)
-
-    # Localization condition
-    # localized_bool = Localized(Ws,side)
-
-    # make G with only localized states
-    G = np.diag(Gs[localized_bool])
-
-    return G
-
-def SurfaceSpectralFunctionWeyl(w,size,kx,kz,t,g,mu,m,r,side=0,spin=1):
+def SurfaceSpectralFunctionWeyl(w,size,kx,kz,t,g,mu,m,r,side=0,spin=0):
     """
     Surface spectral function for WSM-Metal system
     """
     G = GeffWeyl(w,size,kx,kz,t,g,mu,m,r)
+    edge = int(size/10)
+
+    def G_summ(spin,base,sgn,edge):
+        # computes G_sum for given spin and side (base,sgn)
+        # both spins
+        if spin == 0:
+            G_sum = G[base,base]+G[base+sgn*1,base+sgn*1]
+            # add remaining edge states
+            for i in range(1,edge):
+                G_sum += G[base + sgn * (2*i),base + sgn * (2*i)] + G[base + sgn * (2*i+1),base + sgn * (2*i+1)]
+        # spin up
+        elif spin == +1:
+            G_sum = G[base,base]
+            # add remaining edge states
+            for i in range(1,edge):
+                G_sum += G[base + sgn * (2*i),base + sgn * (2*i)]
+        # spin down
+        elif spin == -1:
+            G_sum = G[base+sgn*1,base+sgn*1]
+            # add remaining edge states
+            for i in range(1,edge):
+                G_sum += G[base + sgn * (2*i+1),base + sgn * (2*i+1)]
+        return G_sum
+
+    # both sides
+    if side == 0:
+        # combine both cases
+        G_sum = G_summ(spin,0,+1,edge) + G_summ(spin,size-1,-1,edge)
+
+    # left side
+    elif side == -1:
+        # we start from
+        base = 0
+        # and we add
+        sgn = +1
+        # G_sum
+        G_sum = G_summ(spin,base,sgn,edge)
+
+    # right side
+    elif side == 1:
+        # we start from
+        base = size-1
+        # and we subtract
+        sgn = -1
+        # G_sum
+        G_sum = G_summ(spin,base,sgn,edge)
+
+    A = - 1 / np.pi * np.imag(G_sum)
+
+    return A
+
+def SurfaceSpectralFunctionMetal(w,size,kx,kz,t,g,mu,m,r,side=0,spin=0):
+    """
+    Surface spectral function for WSM-Metal system
+    """
+    G = GeffMetal(w,size,kx,kz,t,g,mu,m,r)
     edge = int(size/10)
 
     def G_summ(spin,base,sgn,edge):
@@ -430,7 +482,41 @@ def SurfaceSpectralFunctionWeyl(w,size,kx,kz,t,g,mu,m,r,side=0,spin=1):
 
 # Plotting tools
 
-def SurfaceSpectralFunctionWeylWK(size,res,kx,kz,t,g,mu,m,r,side=0):
+def SurfaceSpectralFunctionWeylWK(size,res,kx,kz,t,g,mu,m,r,side=0,spin=0):
+    """
+    Makes array for Surface spectral function plotted as W vs. K
+    """
+    # set up arrays
+    ws = np.linspace(-0.8,0.8,num=res)
+
+    As = np.zeros((res),dtype=float)
+
+    # loop over them
+    for i in range(len(ws)):
+        w = ws[i] + 1j * 0.05 
+        A = SurfaceSpectralFunctionWeyl(w,size,kx,kz,t,g,mu,m,r,side,spin)
+        As[i] = A
+
+    return As
+
+def SurfaceSpectralFunctionWeylKK(w,size,res,kx,t,g,mu,m,r,side=0,spin=0):
+    """
+    Makes array for Surface spectral function plotted as kx vs. kz
+    """
+    # set up arrays
+    kzs = np.linspace(-np.pi,np.pi,num=res)
+
+    As = np.zeros((res),dtype=float)
+
+    # loop over them
+    for i in range(len(kzs)):
+        kz = kzs[i]
+        A = SurfaceSpectralFunctionWeyl(w,size,kx,kz,t,g,mu,m,r,side,spin)
+        As[i] = A
+
+    return As
+
+def SurfaceSpectralFunctionMetalWK(size,res,kx,kz,t,g,mu,m,r,side=0,spin=0):
     """
     Makes array for Surface spectral function plotted as W vs. K
     """
@@ -442,12 +528,12 @@ def SurfaceSpectralFunctionWeylWK(size,res,kx,kz,t,g,mu,m,r,side=0):
     # loop over them
     for i in range(len(ws)):
         w = ws[i] + 1j * 0.05 
-        A = SurfaceSpectralFunctionWeyl(w,size,kx,kz,t,g,mu,m,r,side)
+        A = SurfaceSpectralFunctionMetal(w,size,kx,kz,t,g,mu,m,r,side,spin)
         As[i] = A
 
     return As
 
-def SurfaceSpectralFunctionWeylKK(w,size,res,kx,t,g,mu,m,r,side=0):
+def SurfaceSpectralFunctionMetalKK(w,size,res,kx,t,g,mu,m,r,side=0,spin=0):
     """
     Makes array for Surface spectral function plotted as kx vs. kz
     """
@@ -459,73 +545,37 @@ def SurfaceSpectralFunctionWeylKK(w,size,res,kx,t,g,mu,m,r,side=0):
     # loop over them
     for i in range(len(kzs)):
         kz = kzs[i]
-        A = SurfaceSpectralFunctionWeyl(w,size,kx,kz,t,g,mu,m,r,side)
+        A = SurfaceSpectralFunctionMetal(w,size,kx,kz,t,g,mu,m,r,side,spin)
         As[i] = A
 
     return As
 
-def GSurfaceMetal(w,size,kx,kz,t,g,mu,m,r,side=0):
+def ZtoX(size):
     """
-    Returns the *effective* surface Green function
-    Normal surface Green function if r=0
+    Matrix for unitary transformation sigma_z -> sigma_x
     """
-    # effective Green function
-    GW = GeffMetal(w,size,kx,kz,t,g,mu,m,r)
+    U_pos = np.eye(size)
+    U_spin = 1 / np.sqrt(2) * (Pauli(0) - 1j * Pauli(2))
+    U = np.kron(U_pos, U_spin)
 
-    # diagonalize
-    Es , Ws = ssl.eigs(GW, k=int(2*size), return_eigenvectors=True)
+    return U
 
-    # Localization condition
-    localized_bool = Localized(Ws,side)
-
-    # make G with only localized states
-    G = np.diag(Es[localized_bool])
-
-    # print(G)
-
-    return G
-
-def SurfaceSpectralFunctionMetal(w,size,kx,kz,t,g,mu,m,r,side=0):
+def GeffWeylX(w,size,kx,kz,t,g,mu,m,r):
     """
-    Surface spectral function for WSM-Metal system
+    Green function rotated by y-axis to sigma_x
     """
-    G = GSurfaceMetal(w,size,kx,kz,t,g,mu,m,r,side)
-    A = - 1 / np.pi * np.imag(np.trace(G))
-    return A
+    # regular Green function
+    G = GeffWeyl(w,size,kx,kz,t,g,mu,m,r)
 
-def SurfaceSpectralFunctionMetalWK(size,res,kx,kz,t,g,mu,m,r,side=0):
-    """
-    Makes array for Surface spectral function plotted as W vs. K
-    """
-    # set up arrays
-    ws = np.linspace(-1,1,num=res)
+    # unitary transformation
+    U = ZtoX(int(size/2))
 
-    As = np.zeros((res),dtype=float)
+    # rotate
+    # print(U.shape)
+    # print(G.shape)
+    Gx = U @ G @ U.conj().T
 
-    # loop over them
-    for i in range(len(ws)):
-        w = ws[i] + 1j * 0.01 
-        A = SurfaceSpectralFunctionMetal(w,size,kx,kz,t,g,mu,m,r,side)
-        As[i] = A
-
-    return As
-
-def SurfaceSpectralFunctionMetalKK(w,size,res,kx,t,g,mu,m,r,side=0):
-    """
-    Makes array for Surface spectral function plotted as kx vs. kz
-    """
-    # set up arrays
-    kzs = np.linspace(-np.pi,np.pi,num=res)
-
-    As = np.zeros((res),dtype=float)
-
-    # loop over them
-    for i in range(len(kzs)):
-        kz = kzs[i]
-        A = SurfaceSpectralFunctionMetal(w,size,kx,kz,t,g,mu,m,r,side)
-        As[i] = A
-
-    return As
+    return Gx
 
 
 # Script to run on cluster

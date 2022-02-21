@@ -53,31 +53,42 @@ def BulkMetalHamiltonian(kx,ky,kz,mu,m):
 
     return MAT
 
-def BulkKPHamiltonian(kx,ky,kz,t,g,mu,m,r):
+def BulkKPHamiltonian(size,kx,ky,kz,t,g,mu,m,r):
     """
     Hamiltonian in k.p approximation
     """
-    q=np.pi
+    q=np.pi/size
 
-    diags = sl.block_diag(BulkWeylHamiltonian(kx,ky,kz,t,t,t,g),
-    BulkWeylHamiltonian(kx,ky+q,kz,t,t,t,g),
-    BulkMetalHamiltonian(kx,ky,kz,mu,m),
-    BulkMetalHamiltonian(kx,ky+q,kz,mu,m))
+    # make diagonals
+    diags = sl.block_diag(BulkWeylHamiltonian(kx,ky-q,kz,t,t,t,g)/2,
+    BulkWeylHamiltonian(kx,ky,kz,t,t,t,g)/2,
+    BulkWeylHamiltonian(kx,ky+q,kz,t,t,t,g)/2,
+    BulkMetalHamiltonian(kx,ky-q,kz,mu,m)/2,
+    BulkMetalHamiltonian(kx,ky,kz,mu,m)/2,
+    BulkMetalHamiltonian(kx,ky+q,kz,mu,m)/2)
 
-    tun = r * np.exp(-1j * q) * Pauli(0)
-    tunn = np.kron(Block("m"),tun) + np.kron(Block("p"),tun.conj().T)
-    tuns = np.kron(Block("m"),tunn) + np.kron(Block("p"),tunn.conj().T)
+    # make tunnelling matrix
+    tuns = np.zeros((2*3,2*3))
 
-    MAT = diags + tuns
+    tun = r / size * np.exp(-1j * q) * Pauli(0)
+    tun0 = r / size * Pauli(0)
+
+    tuns[2*1:2*2,2*0:2*1] = tun
+    tuns[2*1:2*2,2*1:2*2] = tun0
+    tuns[2*1:2*2,2*2:2*3] = tun.conj().T
+
+    tunn = np.kron(Block("p"),tuns)
+
+    MAT = diags + tunn + tunn.conj().T
 
     return MAT
 
-def BulkSpectrum(ky,kz,t,g,mu,m,r):
+def BulkSpectrum(size,ky,kz,t,g,mu,m,r):
     """
     Spectrum for Bulk Hamiltonian with Tunnelling
     """
     res = 100
-    s = 8
+    s = 12
 
     kxs = np.linspace(-np.pi,np.pi,num=res)
 
@@ -86,7 +97,7 @@ def BulkSpectrum(ky,kz,t,g,mu,m,r):
 
     for i in range(res):
         kx = kxs[i]
-        H = BulkKPHamiltonian(kx,ky,kz,t,g,mu,m,r)
+        H = BulkKPHamiltonian(size,kx,ky,kz,t,g,mu,m,r)
         E = np.linalg.eigvalsh(H)
         Es[:,i] = E
         # Kxs[s*i:s*(i+1)] = np.repeat(kx,s)
