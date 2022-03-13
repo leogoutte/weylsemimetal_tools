@@ -44,7 +44,7 @@ def MetalHamiltonian(size,kx,kz,mu,m):
     Open in y, closed in x, z
     """
     # diagonals
-    diags_0 = np.asarray([(3/m - mu - 1/m * np.cos(kx) - 1/m * np.cos(kz)) for _ in range(size)])
+    diags_0 = np.asarray([(2/m - mu - 1/m * np.cos(kx) - 1/m * np.cos(kz)) for _ in range(size)])
 
     diags = np.kron(np.diag(diags_0),Pauli(0)) 
 
@@ -62,7 +62,7 @@ def TunnellingMatrix(size_n,size_m,r):
     Returns upper diagonal T^{\dagger}
     """
     Tun_lower = np.zeros((2*size_n,2*size_m),dtype=complex)
-    Tun_lower[0:2,2*(size_m-1):2*size_m] = r * Pauli(0)
+    Tun_lower[2*(size_n-1):2*size_n,0:2] = r * Pauli(0)
     
     return Tun_lower
 
@@ -86,7 +86,7 @@ def SelfEnergyWeyl(w,size,kx,kz,t,g,mu,m,r):
     
     G_metal = np.linalg.inv(G_inv_metal)
 
-    SE = G_weyl @ TunnellingMatrix(new_size_wsm,new_size_metal,r) @ G_metal @ TunnellingMatrix(new_size_wsm,new_size_metal,r).conj().T @ G_inv_weyl
+    SE = TunnellingMatrix(new_size_wsm,new_size_metal,r) @ G_metal @ TunnellingMatrix(new_size_wsm,new_size_metal,r).conj().T
     
     return SE
 
@@ -114,12 +114,10 @@ def SelfEnergyMetal(w,size,kx,kz,t,g,mu,m,r):
     
     return SE
 
-def SelfEnergyWeylWK(size,kx,kz,t,g,mu,m,r):
+def SelfEnergyWeylWK(size,res,kx,kz,t,g,mu,m,r):
     """
     Return array for plot as a function of energy and momentum
     """
-    res = 100
-
     # set up arrays
     ws = np.linspace(-1,1,num=res)
 

@@ -49,7 +49,7 @@ def BulkMetalHamiltonian(kx,ky,kz,mu,m):
     Hamiltonian for Bulk Metal 
     """
     # diagonals
-    MAT = (3/m - mu - 1/m * (np.cos(kx) + np.cos(ky) + np.cos(kz))) * Pauli(0)
+    MAT = (2/m - mu - 1/m * (np.cos(kx) + np.cos(ky) + np.cos(kz))) * Pauli(0)
 
     return MAT
 
@@ -83,23 +83,41 @@ def BulkKPHamiltonian(size,kx,ky,kz,t,g,mu,m,r):
 
     return MAT
 
-def BulkSpectrum(size,ky,kz,t,g,mu,m,r):
+def BulkSpectrum(size,res,ky,kz,t,g,mu,m,r):
     """
     Spectrum for Bulk Hamiltonian with Tunnelling
     """
-    res = 100
     s = 12
 
     kxs = np.linspace(-np.pi,np.pi,num=res)
 
-    Es = np.zeros((s,res),dtype=float)
-    # Kxs = np.zeros((s*res),dtype=float)
+    Es = np.zeros((res,s),dtype=float)
 
     for i in range(res):
         kx = kxs[i]
         H = BulkKPHamiltonian(size,kx,ky,kz,t,g,mu,m,r)
         E = np.linalg.eigvalsh(H)
-        Es[:,i] = E
-        # Kxs[s*i:s*(i+1)] = np.repeat(kx,s)
+        Es[i,:] = E
 
-    return kxs, Es.T
+    return kxs, Es
+
+def BulkSpectrumSummedOver(size,res,kz,t,g,mu,m,r):
+    """
+    Compute energies summed over ky
+    to compare with finite length model
+    """
+    s = 12
+
+    # resolutions are the same in all directions
+    resy=res
+    
+    kys = np.linspace(-np.pi,np.pi,num=resy)
+
+    Es = np.zeros((res,s*resy),dtype=float)
+
+    for i in range(res):
+        ky = kys[i]
+        kxs, E = BulkSpectrum(size=size,res=res,ky=ky,kz=kz,t=t,g=g,mu=mu,m=m,r=r)
+        Es[:,s*i:s*(i+1)] = E
+
+    return kxs, Es

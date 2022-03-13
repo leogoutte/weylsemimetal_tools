@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.sparse.linalg as ssl
+import scipy.linalg as sl
 
 def Pauli(idx):
     """
@@ -15,6 +16,33 @@ def Pauli(idx):
         pmat=np.array(([1,0],[0,-1]),dtype=float)
 
     return pmat
+
+def Block(idx):
+    """
+    Upper (u), Lower (l), Plus (p) and Minus (m) blocks for np.kron
+    """
+    if idx=="u":
+        pmat=(Pauli(0) + Pauli(3)) / 2
+    elif idx=="l":
+        pmat=(Pauli(0) - Pauli(3)) / 2
+    elif idx=="p":
+        pmat=(Pauli(1) + 1j*Pauli(2)) / 2
+    elif idx=="m":
+        pmat=(Pauli(1) - 1j*Pauli(2)) / 2
+    
+    return pmat
+
+def BulkBHZHamiltonian(kx,ky,A,M,p):
+    """
+    Hamiltonian for the Bulk BHZ system
+    """
+    M_z = M * (1 + p - np.cos(kx) - np.cos(ky)) * Pauli(3)
+    M_x = A * np.sin(kx) * Pauli(1)
+    M_y = A * np.sin(ky) * Pauli(2)
+
+    MAT = M_x + M_y + M_z
+
+    return MAT
 
 def BHZHamiltonian(size,kx,A,M,p):
     """
@@ -89,15 +117,35 @@ def TunnellingMatrix(size_n,size_m,r):
 
 def FullHamiltonian(size,kx,A,M,p,mu,m,r):
     """
-    Hamiltonian for Bulk WSM - Bulk Metal system
+    Hamiltonian for 2DTI - Metal system
     """
     # size of each sample
     new_size = int(size/2) # <- this won't actually add up to size, but ok
 
     # diagonals
     H2DTI = BHZHamiltonian(size=new_size,kx=kx,A=A,M=M,p=p)
-    HMetal = BHZHamiltonian(size=new_size,kx=kx,A=A,M=-M,p=p)
+    HMetal = MetalHamiltonian2D(size=new_size,kx=kx,mu=mu,m=m)
     diags = np.kron((Pauli(0)+Pauli(3))/2,H2DTI)+ np.kron((Pauli(0)-Pauli(3))/2,HMetal)
+
+    # tunneling
+    Tun_upper = TunnellingMatrix(new_size,new_size,r)
+    off_diag = np.kron((Pauli(1)+1j*Pauli(2))/2,Tun_upper) + np.kron((Pauli(1)-1j*Pauli(2))/2,Tun_upper.conj().T) 
+
+    MAT = diags + off_diag
+
+    return MAT
+
+def FullHamiltonian2DTI(size,kx,A,M,p,mu,m,r):
+    """
+    Hamiltonian for 2DTI - 2DTI system
+    """
+    # size of each sample
+    new_size = int(size/2) # <- this won't actually add up to size, but ok
+
+    # diagonals
+    H2DTIp = BHZHamiltonian(size=new_size,kx=kx,A=A,M=M,p=p)
+    H2DTIm = BHZHamiltonian(size=new_size,kx=kx,A=A,M=-M,p=p)
+    diags = np.kron((Pauli(0)+Pauli(3))/2,H2DTIp)+ np.kron((Pauli(0)-Pauli(3))/2,H2DTIm)
 
     # tunneling
     Tun_upper = TunnellingMatrix(new_size,new_size,r)
@@ -162,17 +210,74 @@ def FullSpectralFunctionWK(size,res,kx,A,M,p,mu,m,r,spin=0):
 
     return As
 
+def BulkKPHamiltonian(kx,ky,A,M,p,r):
+    """
+    Hamiltonian with size 4
+    """
+    # make diagonals
+    diags = sl.block_diag(BulkBHZHamiltonian(kx,ky,A,M,p),
+    BulkBHZHamiltonian(kx,ky,A,M,p),
+    BulkBHZHamiltonian(kx,ky,A,M,p),
+    BulkBHZHamiltonian(kx,ky,A,M,p),
+    BulkBHZHamiltonian(kx,ky,A,-M,p),
+    BulkBHZHamiltonian(kx,ky,A,-M,p),
+    BulkBHZHamiltonian(kx,ky,A,-M,p),
+    BulkBHZHamiltonian(kx,ky,A,-M,p))
 
+    # make tunnelling matrix
+    tuns = np.zeros((2*4,2*4))
 
+    tun = r / 4 * Pauli(0)
 
+    tuns[2*2:2*3,2*0:2*1] = -1 * tun
+    tuns[2*2:2*3,2*1:2*2] = -1j * tun
+    tuns[2*2:2*3,2*2:2*3] = 1 * tun
+    tuns[2*2:2*3,2*3:2*4] = 1j * tun
 
+    tunn = np.kron(Block("p"),tuns)
 
+    MAT = diags + tunn + tunn.conj().T
 
+    return MAT
 
+def BulkSpectrum(res,ky,A,M,p,r):
+    """
+    Spectrum for Bulk Hamiltonian with Tunnelling
+    """
+    s = 16
 
+    kxs = np.linspace(-np.pi,np.pi,num=res)
 
+    Es = np.zeros((res,s),dtype=float)
 
+    for i in range(res):
+        kx = kxs[i]
+        H = BulkKPHamiltonian(kx,ky,A,M,p,r)
+        E = np.linalg.eigvalsh(H)
+        Es[i,:] = E
 
+    return kxs, Es
+
+def BulkSpectrumSummedOver(res,A,M,p,r):
+    """
+    Compute energies summed over ky
+    to compare with finite length model
+    """
+    s = 16
+
+    # resolutions are the same in all directions
+    resy=res
+    
+    kys = np.linspace(-np.pi,np.pi,num=resy)
+
+    Es = np.zeros((res,s*resy),dtype=float)
+
+    for i in range(res):
+        ky = kys[i]
+        kxs, E = BulkSpectrum(res=res,ky=ky,A=A,M=M,p=p,r=r)
+        Es[:,s*i:s*(i+1)] = E
+
+    return kxs, Es
 
 
 
