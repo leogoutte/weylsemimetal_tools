@@ -62,23 +62,33 @@ def WeylHamiltonian(size,kx,kz,tx,ty,tz,g):
 
     return MAT
 
-def MetalHamiltonian(size,kx,kz,mu,m):
+def MetalHamiltonian(size,kx,kz,t,mu):
     """
     Hamiltonian for Bulk Metal 
     Open in y, closed in x, z
     """
     # diagonals
-    diags_0 = np.asarray([(2/m - mu - 1/m * np.cos(kx) - 1/m * np.cos(kz)) for _ in range(size)])
+    diags_0 = np.asarray([(-t * (np.cos(kx) + np.cos(kz)) - mu) for _ in range(size)])
 
     diags = np.kron(np.diag(diags_0),Pauli(0)) 
 
     # hopping
-    hop_low = -1 / (2 * m) * np.kron(np.eye(size,k=-1),Pauli(0))
+    hop_low = -t / 2 * np.kron(np.eye(size,k=-1),Pauli(0))
     hop = hop_low + hop_low.conj().T
 
     MAT = diags + hop
 
     return MAT
+
+def BulkMetalHamiltonian(kx,ky,kz,t,mu):
+    """
+    Hamiltonian for the Bulk metal
+    """
+    H = np.cos(kx)+np.cos(ky)+np.cos(kz)
+    H *= -t
+    H += -mu
+    H_bulk = H * Pauli(0)
+    return H_bulk
 
 def TunnellingMatrix(size_n,size_m,r):
     """
@@ -92,7 +102,7 @@ def TunnellingMatrix(size_n,size_m,r):
 
 # Full system
 
-def FullHamiltonian(size,kx,kz,t,g,mu,m,r):
+def FullHamiltonian(size,kx,kz,t,g,mu,r):
     """
     Hamiltonian for Bulk WSM - Bulk Metal system
     """
@@ -101,7 +111,7 @@ def FullHamiltonian(size,kx,kz,t,g,mu,m,r):
 
     # diagonals
     HWSM = WeylHamiltonian(size=new_size,kx=kx,kz=kz,tx=t,ty=t,tz=t,g=g)
-    HMetal = MetalHamiltonian(size=new_size,kx=kx,kz=kz,mu=mu,m=m)
+    HMetal = MetalHamiltonian(size=new_size,kx=kx,kz=kz,t=t,mu=mu)
     diags = np.kron((Pauli(0)+Pauli(3))/2,HWSM)+ np.kron((Pauli(0)-Pauli(3))/2,HMetal)
 
     # tunneling
@@ -112,26 +122,51 @@ def FullHamiltonian(size,kx,kz,t,g,mu,m,r):
 
     return MAT
 
-def Spectrum(size,kz,t,g,mu,m,r):
+def FullHamiltonianBis(size,kx,kz,t,g,mu,r):
+    """
+    Hamiltonian for Bulk WSM - Bulk Metal system
+    """
+    # diagonals
+    ky=np.pi/2 # <- spectral function doesn't change with ky
+    HWSM = WeylHamiltonian(size=size,kx=kx,kz=kz,tx=t,ty=t,tz=t,g=g)
+    HMetal = BulkMetalHamiltonian(kx=kx,ky=ky,kz=kz,t=t,mu=mu)
+
+    MAT = np.zeros((2*(size+1),2*(size+1)),dtype=complex)
+
+    MAT[0:2*size,0:2*size] = HWSM
+    MAT[2*size:2*(size+1),2*size:2*(size+1)] = HMetal
+
+    # tunneling
+    Tun_upper = TunnellingMatrix(size,1,r)
+    Tun_lower = Tun_upper.conj().T
+
+    MAT[0:2*size,2*size:2*(size+1)] = Tun_upper
+    MAT[2*size:2*(size+1),0:2*size] = Tun_lower
+
+    return MAT
+
+def Spectrum(size,kz,t,g,mu,m,r,bulk=0):
     """
     Energy spectrum for FullHamiltonian
     """
+    size += bulk
     res=100
     kxs = np.linspace(-np.pi,np.pi,res)
     Es = np.zeros((2*size,res),dtype=float)
     for i in range(res):
         kx=kxs[i]
-        H = FullHamiltonian(size,kx,kz,t,g,mu,m,r)
+        H = FullHamiltonianBis(size,kx,kz,t,g,mu,m,r)
         E = np.linalg.eigvalsh(H)
         Es[:,i] = E
     return kxs, Es.T
 
-def FullSpectralFunction(w,size,kx,kz,t,g,mu,m,r,spin=0):
+def FullSpectralFunction(w,size,kx,kz,t,g,mu,r,spin=0):
     """
     Full spectral function calculation
     """
+    size_mod=size+1 # new size to account for metal block in G calculation
     # compute Green function
-    G = np.linalg.inv(w * np.eye(2 * size) - FullHamiltonian(size,kx,kz,t,g,mu,m,r))
+    G = np.linalg.inv(w * np.eye(2 * size_mod) - FullHamiltonianBis(size,kx,kz,t,g,mu,r))
 
     # both spins summed over
     if spin == 0:
@@ -147,6 +182,8 @@ def FullSpectralFunction(w,size,kx,kz,t,g,mu,m,r,spin=0):
         G_down = np.diag(G)[1::2]
         A = - 1 / np.pi * np.imag(np.sum(G_down))
 
+    # A = - 1 / np.pi * np.imag(np.trace(G[2*(size-1):2*size,2*(size-1):2*size]))
+
     return A
 
 def FullSpectralFunctionWeylWK(size,res,kx,kz,t=1,g=0,mu=0,m=0.5,r=0.5):
@@ -154,14 +191,14 @@ def FullSpectralFunctionWeylWK(size,res,kx,kz,t=1,g=0,mu=0,m=0.5,r=0.5):
     Return array for plot as a function of energy and momentum
     """
     # set up arrays
-    ws = np.linspace(-0,8,num=res)
+    ws = np.linspace(-1.5,1.5,num=res)
 
     As = np.zeros((res),dtype=float)
 
     # loop over them
     for i in range(len(ws)):
         w = ws[i] + 1j * 0.03
-        A = FullSpectralFunction(w,size,kx,kz,t,g,mu,m,r)
+        A = FullSpectralFunction(w,size,kx,kz,t,g,mu,r)
         As[i] = A
 
     return As
@@ -394,7 +431,7 @@ def SurfaceSpectralFunctionWeyl(w,size,kx,kz,t,g,mu,m,r,side=0,spin=0):
     Surface spectral function for WSM-Metal system
     """
     G = GeffWeyl(w,size,kx,kz,t,g,mu,m,r)
-    edge = int(size/30)
+    edge = int(size/size)
 
     def G_summ(spin,base,sgn,edge):
         # computes G_sum for given spin and side (base,sgn)
@@ -606,46 +643,41 @@ def GeffWeylX(w,size,kx,kz,t,g,mu,m,r):
 
 
 
-def AnalyticGreen(size,w,kx,kz,t,g,mu,m,r):
+def AnalyticGreen(size,w,kx,kz,t,g,mu,r):
     """
     Analytic Green function
     """
     # define variables
-    g1 = np.sin(kx)
-    g3 = 2 - np.cos(kx) - np.cos(kz)
-    A = 1 # cutoff
-    b = 2 * m * w - kx**2 - kz**2
+    g1 = t * np.sin(kx)
+    g3 = t * (2 + g - np.cos(kx) - np.cos(kz))
+    b = w / (t) + np.cos(kx) + np.cos(kz) + mu / (t) 
 
     # diagonals
     diags_const = np.asarray([w for _ in range(size)])
     diags_x = np.asarray([-g1 for _ in range(size)])
-    diags_y = np.asarray([np.cos(A) - 1 for _ in range(size)])
-    diags_z = np.asarray([-g3 + np.sin(A) for _ in range(size)])
+    diags_z = np.asarray([-g3 for _ in range(size)])
 
     diag_const = np.kron(np.diag(diags_const),Pauli(0)) 
     diag_x = np.kron(np.diag(diags_x),Pauli(1)) 
-    diag_y = np.kron(np.diag(diags_y),Pauli(2)) 
     diag_z = np.kron(np.diag(diags_z),Pauli(3)) 
 
-    diag = diag_const + diag_x + diag_y + diag_z
+    diag = 2 * np.pi * (diag_const + diag_x + diag_z)
 
-    # add in hopping term
-    diag[2*int(size-1):2*(size),2*int(size-1):2*(size)] += - 2 * m * r**2 * 1/np.sqrt(b) * np.arctanh(A/np.sqrt(b)) * Pauli(0)
+    diag[2*int(size-1):,2*int(size-1):] = diag[2*int(size-1):2*(size),2*int(size-1):2*(size)] + r**2 / t * 2 * np.pi / np.sqrt(b**2 - 1) * Pauli(0)
 
-    # hopping
-    hop_m1 = np.exp(1j*A)*(-1j*w*Pauli(0) + 1j*(g1*Pauli(1)+g3*Pauli(3)) - (2*1j*A*np.exp(-1j*A)-np.exp(1j*A))/4*Pauli(2) - (1j*np.exp(1j*A)-2*A*np.exp(-1j*A))/4*Pauli(3))
-    hop_m1 -= (-1j*w*Pauli(0) + 1j*(g1*Pauli(1)+g3*Pauli(3)) - (-1)/4*Pauli(2) - (1j)/4*Pauli(3))
-    hop_p1 = np.exp(-1j*A)*(1j*w*Pauli(0) - 1j*(g1*Pauli(1)+g3*Pauli(3)) - (-2*1j*A*np.exp(1j*A)-np.exp(-1j*A))/4*Pauli(2) - (-1j*np.exp(-1j*A)-2*A*np.exp(1j*A))/4*Pauli(3))
-    hop_p1 -= (1j*w*Pauli(0) - 1j*(g1*Pauli(1)+g3*Pauli(3)) - (-1)/4*Pauli(2) - (-1j)/4*Pauli(3))
+    # add in tunnelling term
+
+    hop_m1 = -1j * np.pi * t * Pauli(2) + np.pi * t * Pauli(3) # s = 1
+    hop_p1 = +1j * np.pi * t * Pauli(2) + np.pi * t * Pauli(3) # s = -1
     hop_low =  np.kron(np.eye(size,k=-1),hop_m1)
-    hop_up =  np.kron(np.eye(size,k=-1),hop_p1)
-    hop = hop_low + hop_up
+    hop_up =  np.kron(np.eye(size,k=+1),hop_p1)
 
-    MAT = diag + hop
+    MAT = (diag + hop_low + hop_up) #* size / (2 * np.pi)
 
+    # invert G^{-1} and return it:
     return np.linalg.inv(MAT)
 
-def AnalyticSpectralFunctionWeylWK(size,res,kx,kz,t,g,mu,m,r,side=0):
+def AnalyticSpectralFunctionWeylWK(size,res,kx,kz,t,g,mu,r,side=0):
     """
     Makes array for Surface spectral function plotted as W vs. K
     """
@@ -657,8 +689,9 @@ def AnalyticSpectralFunctionWeylWK(size,res,kx,kz,t,g,mu,m,r,side=0):
     # loop over them
     for i in range(len(ws)):
         w = ws[i] + 1j*0.03
-        G = AnalyticGreen(size,w,kx,kz,t,g,mu,m,r)
-        A = np.imag(np.trace(G))
+        G = AnalyticGreen(size,w,kx,kz,t,g,mu,r)
+        # A = - 1 / np.pi * np.imag(np.trace(G))
+        A = - 1 / np.pi * np.imag(np.trace(G[2*(size-1):2*size,2*(size-1):2*size]))
         As[i] = A
 
     return As
