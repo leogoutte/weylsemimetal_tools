@@ -44,16 +44,16 @@ def BulkWeylHamiltonian(kx,ky,kz,tx,ty,tz,g):
 
     return MAT
 
-def BulkMetalHamiltonian(kx,ky,kz,mu,m):
+def BulkMetalHamiltonian(kx,ky,kz,t,mu):
     """
     Hamiltonian for Bulk Metal 
     """
     # diagonals
-    MAT = (2/m - mu - 1/m * (np.cos(kx) + np.cos(ky) + np.cos(kz))) * Pauli(0)
+    MAT = (- mu - t * (np.cos(kx) + np.cos(ky) + np.cos(kz))) * Pauli(0)
 
     return MAT
 
-def BulkKPHamiltonian(size,kx,ky,kz,t,g,mu,m,r):
+def BulkKPHamiltonian(size,kx,ky,kz,t,g,mu,r):
     """
     Hamiltonian in k.p approximation
     """
@@ -63,12 +63,12 @@ def BulkKPHamiltonian(size,kx,ky,kz,t,g,mu,m,r):
     diags = sl.block_diag(BulkWeylHamiltonian(kx,ky-q,kz,t,t,t,g)/2,
     BulkWeylHamiltonian(kx,ky,kz,t,t,t,g)/2,
     BulkWeylHamiltonian(kx,ky+q,kz,t,t,t,g)/2,
-    BulkMetalHamiltonian(kx,ky-q,kz,mu,m)/2,
-    BulkMetalHamiltonian(kx,ky,kz,mu,m)/2,
-    BulkMetalHamiltonian(kx,ky+q,kz,mu,m)/2)
+    BulkMetalHamiltonian(kx,ky-q,kz,t,mu)/2,
+    BulkMetalHamiltonian(kx,ky,kz,t,mu)/2,
+    BulkMetalHamiltonian(kx,ky+q,kz,t,mu)/2)
 
     # make tunnelling matrix
-    tuns = np.zeros((2*3,2*3))
+    tuns = np.zeros((2*3,2*3),dtype=complex)
 
     tun = r / size * np.exp(-1j * q) * Pauli(0)
     tun0 = r / size * Pauli(0)
@@ -83,7 +83,7 @@ def BulkKPHamiltonian(size,kx,ky,kz,t,g,mu,m,r):
 
     return MAT
 
-def BulkSpectrum(size,res,ky,kz,t,g,mu,m,r):
+def BulkSpectrum(size,res,ky,kz,t,g,mu,r):
     """
     Spectrum for Bulk Hamiltonian with Tunnelling
     """
@@ -95,13 +95,13 @@ def BulkSpectrum(size,res,ky,kz,t,g,mu,m,r):
 
     for i in range(res):
         kx = kxs[i]
-        H = BulkKPHamiltonian(size,kx,ky,kz,t,g,mu,m,r)
+        H = BulkKPHamiltonian(size,kx,ky,kz,t,g,mu,r)
         E = np.linalg.eigvalsh(H)
         Es[i,:] = E
 
     return kxs, Es
 
-def BulkSpectrumSummedOver(size,res,kz,t,g,mu,m,r):
+def BulkSpectrumSummedOver(size,res,kz,t,g,mu,r):
     """
     Compute energies summed over ky
     to compare with finite length model
@@ -117,7 +117,53 @@ def BulkSpectrumSummedOver(size,res,kz,t,g,mu,m,r):
 
     for i in range(res):
         ky = kys[i]
-        kxs, E = BulkSpectrum(size=size,res=res,ky=ky,kz=kz,t=t,g=g,mu=mu,m=m,r=r)
+        kxs, E = BulkSpectrum(size=size,res=res,ky=ky,kz=kz,t=t,g=g,mu=mu,r=r)
         Es[:,s*i:s*(i+1)] = E
 
     return kxs, Es
+
+
+
+def FullSpectralFunction(w,kx,kz,t,g,mu,r,spin=0):
+    """
+    Full spectral function calculation
+    """
+    size = 12
+    # compute Green function
+    ky=0
+    G = np.linalg.inv(w * np.eye(size) - BulkKPHamiltonian(size,kx,ky,kz,t,g,mu,r))
+
+    # both spins summed over
+    if spin == 0:
+        A = - 1 / np.pi * np.imag(np.trace(G))
+
+    # only up spin
+    if spin == 1:
+        G_up = np.diag(G)[::2]
+        A = - 1 / np.pi * np.imag(np.sum(G_up))
+
+    # only down spin
+    if spin == -1:
+        G_down = np.diag(G)[1::2]
+        A = - 1 / np.pi * np.imag(np.sum(G_down))
+
+    # A = - 1 / np.pi * np.imag(np.trace(G[2*(size-1):2*size,2*(size-1):2*size]))
+
+    return A
+
+def FullSpectralFunctionWeylWK(res,kx,kz,t=1,g=0,mu=0,r=0.5,spin=0):
+    """
+    Return array for plot as a function of energy and momentum
+    """
+    # set up arrays
+    ws = np.linspace(-1.5,1.5,num=res)
+
+    As = np.zeros((res),dtype=float)
+
+    # loop over them
+    for i in range(len(ws)):
+        w = ws[i] + 1j * 0.03
+        A = FullSpectralFunction(w,kx,kz,t,g,mu,r,spin)
+        As[i] = A
+
+    return As
