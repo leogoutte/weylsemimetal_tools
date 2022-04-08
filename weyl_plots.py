@@ -2,6 +2,8 @@
 
 import numpy as np
 import scipy.sparse.linalg as ssl
+import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 def Pauli(idx):
     """
@@ -134,7 +136,7 @@ def Spectrum(size,kz,t,g,mu,r,bulk=0):
     Vs = np.zeros((2*size_,2*size_,res),dtype=complex)
     for i in range(res):
         k=ks[i]
-        H = FullHamiltonianBis(size=size,kx=k,kz=kz,t=t,g=g,mu=mu,r=r)
+        H = FullHamiltonian(size=size,kx=k,kz=kz,t=t,g=g,mu=mu,r=r)
         E, V = np.linalg.eigh(H)
         Es[:,i] = E
         Vs[:,:,i] = V
@@ -407,6 +409,31 @@ def SpectralFunctionArray(size,res,plot_type="xw",xrange=np.pi,yrange=np.pi,w=0,
     return As
 
 
+def FivePlots(As_0,As_08,As_1,As_15,As_23,res=100,kname="k_x"):
+    """
+    Plots five spectral functions
+    """
+    fig,ax=plt.subplots(nrows=1,ncols=5,sharey=True,figsize=(15,5))
+    
+    As = [As_0,As_08,As_1,As_15,As_23]
+    
+    for i in range(5):
+    
+        im = ax[i].imshow(As[i],cmap='inferno')
+        divider = make_axes_locatable(ax[i])
+        cax = divider.append_axes('right', size='5%', pad=0.05)
+        fig.colorbar(im, cax=cax, orientation='vertical')
+        
+        ax[i].set_xticks([0,int(res/2)-1/2,res-1])
+        ax[i].set_xticklabels([r"-$1$",r"0",r"$1$"])
+        ax[i].set_xlabel(r"${}$".format(kname))
+        
+    ax[0].set_ylim(0,res)
+    ax[0].set_yticks([0,int(res/2),res])
+    ax[0].set_yticklabels(["$-2t$","0","$2t$"])
+    ax[0].set_ylabel(r"$\omega$")
+    
+    plt.show()
 
 
 

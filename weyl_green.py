@@ -146,7 +146,7 @@ def FullHamiltonianBis(size,kx,kz,t,g,mu,r):
 
     return MAT
 
-def Spectrum(size,kz,t,g,mu,m,r,bulk=0):
+def Spectrum(size,kz,t,g,mu,r,bulk=0):
     """
     Energy spectrum for FullHamiltonian
     """
@@ -156,38 +156,68 @@ def Spectrum(size,kz,t,g,mu,m,r,bulk=0):
     Es = np.zeros((2*size,res),dtype=float)
     for i in range(res):
         kx=kxs[i]
-        H = FullHamiltonianBis(size,kx,kz,t,g,mu,m,r)
+        H = FullHamiltonian(size,kx,kz,t,g,mu,r)
         E = np.linalg.eigvalsh(H)
         Es[:,i] = E
     return kxs, Es.T
 
-def FullSpectralFunction(w,size,kx,kz,t,g,mu,r,spin=0):
+def FullSpectralFunction(w,size,kx,kz,t,g,mu,r,spin=0,side=0):
     """
     Full spectral function calculation
     """
-    size_mod=size+1 # new size to account for metal block in G calculation
-    # compute Green function
-    G = np.linalg.inv(w * np.eye(2 * size_mod) - FullHamiltonianBis(size,kx,kz,t,g,mu,r))
+    G = np.linalg.inv(w * np.eye(2 * size + 2) - FullHamiltonianBis(size,kx,kz,t,g,mu,r))
+    edge = int(size/size)
 
-    # both spins summed over
-    if spin == 0:
-        A = - 1 / np.pi * np.imag(np.trace(G))
+    # def G_summ(spin,base,sgn,edge):
+    #     # computes G_sum for given spin and side (base,sgn)
+    #     # both spins
+    #     if spin == 0:
+    #         G_sum = G[base,base]+G[base+sgn*1,base+sgn*1]
+    #         # add remaining edge states
+    #         for i in range(1,edge):
+    #             G_sum += G[base + sgn * (2*i),base + sgn * (2*i)] + G[base + sgn * (2*i+1),base + sgn * (2*i+1)]
+    #     # spin up
+    #     elif spin == +1:
+    #         G_sum = G[base,base]
+    #         # add remaining edge states
+    #         for i in range(1,edge):
+    #             G_sum += G[base + sgn * (2*i),base + sgn * (2*i)]
+    #     # spin down
+    #     elif spin == -1:
+    #         G_sum = G[base+sgn*1,base+sgn*1]
+    #         # add remaining edge states
+    #         for i in range(1,edge):
+    #             G_sum += G[base + sgn * (2*i+1),base + sgn * (2*i+1)]
+    #     return G_sum
 
-    # only up spin
-    if spin == 1:
-        G_up = np.diag(G)[::2]
-        A = - 1 / np.pi * np.imag(np.sum(G_up))
+    # # both sides
+    # if side == 0:
+    #     # combine both cases
+    #     G_sum = G_summ(spin,0,+1,edge) + G_summ(spin,size-1,-1,edge)
 
-    # only down spin
-    if spin == -1:
-        G_down = np.diag(G)[1::2]
-        A = - 1 / np.pi * np.imag(np.sum(G_down))
+    # # left side
+    # elif side == -1:
+    #     # we start from
+    #     base = 0
+    #     # and we add
+    #     sgn = +1
+    #     # G_sum
+    #     G_sum = G_summ(spin,base,sgn,edge)
 
-    # A = - 1 / np.pi * np.imag(np.trace(G[2*(size-1):2*size,2*(size-1):2*size]))
+    # # right side
+    # elif side == 1:
+    #     # we start from
+    #     base = size-1
+    #     # and we subtract
+    #     sgn = -1
+    #     # G_sum
+    #     G_sum = G_summ(spin,base,sgn,edge)
+
+    A = - 1 / np.pi * np.imag(np.trace(G[2*(size-1):2*size,2*(size-1):2*size]))
 
     return A
 
-def FullSpectralFunctionWeylWK(size,res,kx,kz,t=1,g=0,mu=0,r=0.5):
+def FullSpectralFunctionWeylWK(size,res,kx,kz,t=1,g=0,mu=0,r=0.5,spin=0,side=0):
     """
     Return array for plot as a function of energy and momentum
     """
@@ -199,12 +229,12 @@ def FullSpectralFunctionWeylWK(size,res,kx,kz,t=1,g=0,mu=0,r=0.5):
     # loop over them
     for i in range(len(ws)):
         w = ws[i] + 1j * 0.03
-        A = FullSpectralFunction(w,size,kx,kz,t,g,mu,r)
+        A = FullSpectralFunction(w,size,kx,kz,t,g,mu,r,spin,side)
         As[i] = A
 
     return As
 
-def FullSpectralFunctionWeylKK(w,size,res,kx,t=1,g=0,mu=0,r=0.5):
+def FullSpectralFunctionWeylKK(w,size,res,kx,t=1,g=0,mu=0,r=0.5,side=0):
     """
     Return array for plot as a function of momentum and momnetum
     """
@@ -218,7 +248,7 @@ def FullSpectralFunctionWeylKK(w,size,res,kx,t=1,g=0,mu=0,r=0.5):
     # loop over them
     for i in range(len(kzs)):
         kz = kzs[i]
-        A = FullSpectralFunction(w,size,kx,kz,t,g,mu,r)
+        A = FullSpectralFunction(w,size,kx,kz,t,g,mu,r,side)
         As[i] = A
 
     return As   
@@ -651,7 +681,7 @@ def AnalyticGreen(size,w,kx,kz,t,g,mu,r):
     # define variables
     g1 = t * np.sin(kx)
     g3 = t * (2 + g - np.cos(kx) - np.cos(kz))
-    b = w/t + np.cos(kx) + np.cos(kz) + mu/t
+    b = w + t*(np.cos(kx) + np.cos(kz)) + mu
 
     # diagonals
     diags_const = np.asarray([w for _ in range(size)])
@@ -666,7 +696,7 @@ def AnalyticGreen(size,w,kx,kz,t,g,mu,r):
 
     # add in tunnelling term
 
-    diag[2*int(size-1):,2*int(size-1):] += r**2 / np.sqrt(b**2 - 1) * Pauli(0)
+    diag[2*int(size-1):,2*int(size-1):] += r**2 / np.sqrt(b**2 - t**2) * Pauli(0)
 
     hop_m1 = -1j / 2 * t * Pauli(2) + 1 / 2 * t * Pauli(3) # s = 1
     hop_p1 = +1j / 2 * t * Pauli(2) + 1 / 2 * t * Pauli(3) # s = -1

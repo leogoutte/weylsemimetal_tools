@@ -16,6 +16,7 @@ def Pauli(idx):
 
     return pmat
 
+# function to determine if surface state == True
 def WeylHamiltonian(size,kx,kz,tx,ty,tz,g):
     """
     Hamiltonian for Bulk Weyl Semimetal
@@ -78,6 +79,40 @@ def TunnellingMatrix(size_n,size_m,r):
     
     return Tun_lower
 
+def Localized(wave,side=0):
+    """
+    Is the wavefunction localized?
+    Equipped to handle array where W[:,i] is ith wave
+    """
+    
+    # make wave into what it was Born to be: probability
+    prob = np.abs(wave)**2
+    prob_norm = prob / np.sum(prob, axis=0)
+
+    # localization condition: 90% of wave is in 20% of side
+    # too strong?
+    length = wave.shape[0]
+    cut = int(length/5)
+    condition = 0.5
+    prob_left = np.sum(prob_norm[0:cut,:], axis=0)
+    prob_right = np.sum(prob_norm[length-cut:length-1,:], axis=0)
+
+    # make returns
+    left = prob_left > condition
+    right = prob_right > condition
+
+    # localized on both ends
+    if side == 0:
+        return np.logical_or(left,right)
+    
+    # only localized on right side
+    elif side == 1:
+        return right
+
+    # only localized on left side
+    elif side == -1:
+        return left
+
 # Full system
 
 def FullHamiltonian(size,kx,kz,t,g,mu,r):
@@ -123,21 +158,30 @@ def FullHamiltonianBis(size,kx,kz,t,g,mu,r):
 
     return MAT
 
-def Spectrum(size,kz,t,g,mu,r,bulk=0):
+def Spectrum(size,kz,t,g,mu,r,bulk=0,return_loc=False):
     """
     Energy spectrum for FullHamiltonian
     """
     size_ = size + bulk # for output arrays
     res=100
     ks = np.linspace(-np.pi,np.pi,res)
+    ks_plot = np.zeros((2*size_,res),dtype=float)
     Es = np.zeros((2*size_,res),dtype=float)
     Vs = np.zeros((2*size_,2*size_,res),dtype=complex)
+    loc_bools = np.zeros((2*size_,res),dtype=bool)
+
     for i in range(res):
         k=ks[i]
-        H = FullHamiltonianBis(size=size,kx=k,kz=kz,t=t,g=g,mu=mu,r=r)
+        H = FullHamiltonian(size=size,kx=k,kz=kz,t=t,g=g,mu=mu,r=r)
         E, V = np.linalg.eigh(H)
+        ks_plot[:,i] = np.full(2*size_,k) 
         Es[:,i] = E
         Vs[:,:,i] = V
+        loc_bools[:,i] = Localized(V)
+
+    if return_loc:
+        return ks_plot, Es, Vs, loc_bools
+    
     return ks, Es.T, Vs
 
 def SpectrumZ(size,kx,t,g,mu,r,bulk=0):
@@ -151,7 +195,7 @@ def SpectrumZ(size,kx,t,g,mu,r,bulk=0):
     Vs = np.zeros((2*size_,2*size_,res),dtype=complex)
     for i in range(res):
         k=ks[i]
-        H = FullHamiltonianBis(size=size,kx=kx,kz=k,t=t,g=g,mu=mu,r=r)
+        H = FullHamiltonian(size=size,kx=kx,kz=k,t=t,g=g,mu=mu,r=r)
         E, V = np.linalg.eigh(H)
         Es[:,i] = E
         Vs[:,:,i] = V
@@ -163,7 +207,7 @@ def FullSpectralFunction(w,size,kx,kz,t,g,mu,r,spin=0):
     """
     size_mod=size+1 # new size to account for metal block in G calculation
     # compute Green function
-    G = np.linalg.inv(w * np.eye(2 * size_mod) - FullHamiltonianBis(size,kx,kz,t,g,mu,r))
+    G = np.linalg.inv(w * np.eye(2 * size) - FullHamiltonian(size,kx,kz,t,g,mu,r))
 
     # both spins summed over
     if spin == 0:
@@ -208,18 +252,96 @@ def FullSpectralFunctionWeylWK(size,res,kx,kz,t=1,g=0,mu=0,m=0.5,r=0.5):
 
 
 
-def Spin(state,size):
+def Spin(state,size,sample=0):
     """
     Computes expectation value of spin along x,y,z axes
     """
+    if sample == -1:
+        state_ = state[:size] / np.sqrt(np.sum(np.abs(state[:size])**2))
+        size_ = int(size/2)
+    elif sample == 1:
+        state_ = state[size:] / np.sqrt(np.sum(np.abs(state[size:])**2))
+        size_ = int(size/2)
+    elif sample == 0:
+        state_ = state
+        size_ = size
+
+
     # make sigma operators
-    SigmaX = np.kron(np.eye(size+1),Pauli(1))
-    SigmaY = np.kron(np.eye(size+1),Pauli(2))
-    SigmaZ = np.kron(np.eye(size+1),Pauli(3))
+    SigmaX = np.kron(np.eye(size_),Pauli(1))
+    SigmaY = np.kron(np.eye(size_),Pauli(2))
+    SigmaZ = np.kron(np.eye(size_),Pauli(3))
     
     # compute expectation value
-    spinX = np.dot(state.conj().T,np.dot(SigmaX,state))
-    spinY = np.dot(state.conj().T,np.dot(SigmaY,state))
-    spinZ = np.dot(state.conj().T,np.dot(SigmaZ,state))
+    spinX = np.dot(state_.conj().T,np.dot(SigmaX,state_))
+    spinY = np.dot(state_.conj().T,np.dot(SigmaY,state_))
+    spinZ = np.dot(state_.conj().T,np.dot(SigmaZ,state_))
     
-    return spinX, spinY, spinZ
+    return np.real(spinX), np.real(spinY), np.real(spinZ)
+
+
+def SpinRealSpace(state,size):
+    """
+    Computes <\sigma_x,y,z> at each y
+    """
+    spinsX = np.zeros(size,dtype=float)
+    spinsY = np.zeros(size,dtype=float)
+    spinsZ = np.zeros(size,dtype=float)
+
+    for i in range(size):
+        # take correct spin state
+        state_ = state[2*i:2*(i+1)] / np.sqrt(np.sum(np.abs(state[2*i:2*(i+1)])**2))
+        # compute expectation values
+        # they are all real, discard complex
+        spinsX[i] = np.real(np.dot(state_.conj().T,np.dot(Pauli(1),state_)))
+        spinsY[i] = np.real(np.dot(state_.conj().T,np.dot(Pauli(2),state_)))
+        spinsZ[i] = np.real(np.dot(state_.conj().T,np.dot(Pauli(3),state_)))
+
+    return spinsX, spinsY, spinsZ
+
+def SumOverSpins(state):
+    """
+    Batch over spin dof to plot only real space
+    """
+    prob = np.abs(state)**2
+
+    state_batched = [np.sum(prob[i:i+2]) for i in range(0, np.size(prob), 2)]
+
+    return state_batched
+
+def Normalize(state):
+    """
+    Normalizes wavefunction
+    """
+    prob = np.sum(np.abs(state)**2)
+
+    return state / np.sqrt(prob)
+
+def SpinMap(size,res,t,g,mu,r):
+    """
+    Colormap of <sigma_x,y,z> in kx,kz space
+    """
+    # define
+    kxs = np.linspace(-np.pi,np.pi,num=res)
+    kzs = np.linspace(-np.pi,np.pi,num=res)
+    SX = np.zeros((res,res),dtype=float)
+    SY = np.zeros((res,res),dtype=float)
+    SZ = np.zeros((res,res),dtype=float)
+    
+    for i in range(res):
+        kz = kzs[i]
+        for j in range(res):
+            kx = kxs[j]
+            H = FullHamiltonian(size=size,kx=kx,kz=kz,t=t,g=g,mu=mu,r=r)
+            E, V = np.linalg.eigh(H)
+            # index of energy closest to 0
+            bdry_idx = np.argmin(np.abs(E))
+            # get state
+            state = V[:,bdry_idx]
+            # compute sigmas
+            spinX,spinY,spinZ = Spin(state,size)
+            SX[i,j] = spinX
+            SY[i,j] = spinY
+            SZ[i,j] = spinZ
+
+    return SX, SY, SZ
