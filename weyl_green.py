@@ -48,7 +48,7 @@ def WeylHamiltonian(size,kx,kz,tx,ty,tz,g):
     tr = +1 # -1 for TR, +1 for normal
     # diagonals
     diags_x = np.asarray([tr * tx * np.sin(kx) for _ in range(size)])
-    diags_z = np.asarray([tz * (2 + g - np.cos(kx) - np.cos(kz)) for _ in range(size)])
+    diags_z = np.asarray([(tz) * (2 + g - np.cos(kx) - np.cos(kz)) for _ in range(size)])
 
     diag_x = np.kron(np.diag(diags_x),Pauli(1))
     diag_z = np.kron(np.diag(diags_z),Pauli(3))
@@ -165,7 +165,7 @@ def FullSpectralFunction(w,size,kx,kz,t,g,mu,r,spin=0,side=0):
     """
     Full spectral function calculation
     """
-    G = np.linalg.inv(w * np.eye(2 * size + 2) - FullHamiltonianBis(size,kx,kz,t,g,mu,r))
+    G = np.linalg.inv(w * np.eye(2 * size) - FullHamiltonian(size,kx,kz,t,g,mu,r))
     edge = int(size/size)
 
     # def G_summ(spin,base,sgn,edge):
@@ -213,7 +213,8 @@ def FullSpectralFunction(w,size,kx,kz,t,g,mu,r,spin=0,side=0):
     #     # G_sum
     #     G_sum = G_summ(spin,base,sgn,edge)
 
-    A = - 1 / np.pi * np.imag(np.trace(G[2*(size-1):2*size,2*(size-1):2*size]))
+    # A = - 1 / np.pi * np.imag(np.trace(G[2*(size-1):2*size,2*(size-1):2*size]))
+    A = - 1 / np.pi * np.imag(np.trace(G))
 
     return A
 
@@ -222,7 +223,7 @@ def FullSpectralFunctionWeylWK(size,res,kx,kz,t=1,g=0,mu=0,r=0.5,spin=0,side=0):
     Return array for plot as a function of energy and momentum
     """
     # set up arrays
-    ws = np.linspace(-1.5,1.5,num=res)
+    ws = np.linspace(-5,5,num=res)
 
     As = np.zeros((res),dtype=float)
 
@@ -351,7 +352,7 @@ def SpectralFunctionWeylWK(size,res,kx,kz,t=1,g=0,mu=0,r=0.5,spin=0):
     Return array for plot as a function of energy and momnetum
     """
     # set up arrays
-    ws = np.linspace(-0.8,0.8,num=res)
+    ws = np.linspace(-1.5,1.5,num=res)
 
     As = np.zeros((res),dtype=float)
 
@@ -678,10 +679,12 @@ def AnalyticGreen(size,w,kx,kz,t,g,mu,r):
     """
     Analytic Green function
     """
+    tm = 1*t
+    mu *= 1
     # define variables
     g1 = t * np.sin(kx)
     g3 = t * (2 + g - np.cos(kx) - np.cos(kz))
-    b = w + t*(np.cos(kx) + np.cos(kz)) + mu
+    b = w + tm * (np.cos(kx) + np.cos(kz)) + mu
 
     # diagonals
     diags_const = np.asarray([w for _ in range(size)])
@@ -696,7 +699,7 @@ def AnalyticGreen(size,w,kx,kz,t,g,mu,r):
 
     # add in tunnelling term
 
-    diag[2*int(size-1):,2*int(size-1):] += r**2 / np.sqrt(b**2 - t**2) * Pauli(0)
+    diag[2*int(size-1):,2*int(size-1):] += r**2 / np.sqrt(b**2 - tm**2) * Pauli(0)
 
     hop_m1 = -1j / 2 * t * Pauli(2) + 1 / 2 * t * Pauli(3) # s = 1
     hop_p1 = +1j / 2 * t * Pauli(2) + 1 / 2 * t * Pauli(3) # s = -1
@@ -722,12 +725,58 @@ def AnalyticSpectralFunctionWeylWK(size,res,kx,kz,t,g,mu,r,side=0):
         w = ws[i] + 1j*0.03
         G = AnalyticGreen(size,w,kx,kz,t,g,mu,r)
         if side == 1:
-            A = - 1 / np.pi * np.imag(np.trace(G[2*(size-1):2*size,2*(size-1):2*size]))
+            A = - 1 / np.pi * np.imag(np.trace(G[2*(size-1):,2*(size-1):]))
         else:
             A = - 1 / np.pi * np.imag(np.trace(G))
         As[i] = A
 
     return As
+
+
+def BulkSpectralFunction(w,kx,ky,kz,r,mu):
+    """
+    Analytical Bulk spectral function
+    """
+    g0 = -2 * (np.cos(kx) + np.cos(ky) + np.cos(kz)) - mu
+    g1 = np.sin(kx)
+    g2 = np.sin(ky)
+    g3 = 2 - np.cos(kx) - np.cos(ky) - np.cos(kz)
+    ew = np.sqrt(g1**2 + g2**2 + g3**2)
+
+    u2 = 1 / 2 * (Pauli(0) + g1*Pauli(1) + g2*Pauli(2) + g3*Pauli(3))
+    v2 = 1 / 2 * (Pauli(0) - g1*Pauli(1) + g2*Pauli(2) + g3*Pauli(3))
+
+    w += 1j * 0.03
+
+    tgmt = r**2 / (w - g0)
+
+    G = u2 * 1 / (w - ew - tgmt) + v2 * 1 / (w + ew - tgmt)
+
+    A = -1 / np.pi * np.real ((G - G.conj().T) / (2 * 1j))
+
+    bra = np.array([1,1]) / np.sqrt(2)
+
+    Ax = bra@ A @ bra.conj().T 
+
+    return Ax
+
+def BulkSpectralFunctionWeylWK(res,kx,ky,kz,r,mu):
+    """
+    Makes array for bulk spectral function plotted as W vs. K
+    """
+    # set up arrays
+    ws = np.linspace(-1.5,1.5,num=res)
+
+    As = np.zeros((res),dtype=float)
+
+    # loop over them
+    for i in range(len(ws)):
+        w = ws[i] + 1j*0.03
+        A = BulkSpectralFunction(w,kx,ky,kz,r,mu)
+        As[i] = A
+
+    return As
+
 
 
 
