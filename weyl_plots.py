@@ -173,7 +173,7 @@ def FullSpectralFunctionWeylWK(size,res,kx,kz,t=1,g=0,mu=0,r=0.5):
     Return array for plot as a function of energy and momentum
     """
     # set up arrays
-    ws = np.linspace(-1.5,1.5,num=res)
+    ws = np.linspace(-4.,4.,num=res)
 
     As = np.zeros((res),dtype=float)
 

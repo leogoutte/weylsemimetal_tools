@@ -84,6 +84,76 @@ def Spectrum(size, res, Phi, tx, ty, tz, g):
 
     return kys_plot, Es
 
+def MetalHamiltonian(size,kx,kz,t,mu):
+    """
+    Metal Hamiltonian
+    """
+    # define the identity
+    I = np.eye(size)
+
+    # define off-diagonals for hopping x -> x+1
+    K = np.eye(size,k=-1)
+
+    # diagonals
+    diags = (-2 * t * (np.cos(kx) + np.cos(kz)) - mu) * np.kron(I,Pauli(0))
+
+    # y-hoppping
+    yhop = -t * np.kron(K,Pauli(0))
+    yhop = yhop + yhop.T.conj()
+
+    MAT = diags + yhop
+
+    return MAT
+
+def MetalSpectrum(size,res,kz,t,mu):
+    """
+    Compute energies of Real Weyl Hamiltonian
+    """
+    res = 100
+    size_ = 2*size
+    ks = np.linspace(-2*np.pi,2*np.pi,num=res)
+
+    Es = np.zeros((res,size_),dtype=float)
+    Ks = np.zeros((res,size_),dtype=float)
+
+    for i in range(res):
+        k = ks[i]
+        H = MetalHamiltonian(size=size,kx=k,kz=kz,t=t,mu=mu)
+        E = ssl.eigsh(H, k=size_, return_eigenvectors=False)
+        Es[i,:] = E
+        Ks[i,:] = np.full(size_,k)
+
+    # make ky array for plotting
+    # ks_plot = np.full((size,res), ks).T
+
+    return Ks, Es
+
+def MetalFiniteYSpectrumKx(size,res,kz,t,mu):
+    """
+    Compute energies of Finite X Hamiltonian
+    Plots as a function of kz
+    """
+    Hdim = int(2*size)
+    res = 100
+    kxs = np.linspace(-np.pi,np.pi,num=res)
+    Es = np.zeros((int(Hdim*res)),dtype=float)
+    Localization = np.zeros((int(Hdim*res)),dtype=bool)
+    waves = np.zeros((int(Hdim*res), Hdim), dtype=complex)
+
+    for i in range(res):
+        kx = kxs[i]
+        H = MetalHamiltonian(size,kx,kz,t,mu)
+        E, wave = ssl.eigsh(H, k=Hdim, return_eigenvectors=True)
+        localized_bool = Localized(wave)
+        Es[Hdim*i:Hdim*(i+1)] = E
+        waves[Hdim*i:Hdim*(i+1),:] = wave
+        Localization[Hdim*i:Hdim*(i+1)] = localized_bool
+
+    # make k array for plotting
+    kxs_plot = np.repeat(kxs,Hdim)
+
+    return kxs_plot, Es, waves, Localization
+    
 def BulkModel(kx,ky,kz,tx,ty,tz,g):
     """
     Hamiltonian for the Bulk Weyl Hamiltonian
