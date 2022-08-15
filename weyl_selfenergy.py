@@ -147,8 +147,6 @@ def SelfConsistentSpectrum(size,wrange,res,kz,t,g,mu,r):
     return flat_ks, flat_Es
 
 
-
-
 def SelfEnergyWeyl(w,size,kx,kz,t,g,mu,m,r):
     """
     Self-energy for WSM-Metal system
