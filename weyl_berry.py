@@ -109,7 +109,7 @@ def PhaseDiagram(res,occ=True,tx=1,ty=1,tz=1):
     Returns 2D array of Chern numbers
     """
     res += 1 # include midpoint
-    gs = np.linspace(-2,2,num=res,endpoint=True)
+    gs = np.linspace(-6,2,num=res,endpoint=True)
     kzs = np.linspace(-np.pi,np.pi,num=res,endpoint=True)
 
     CNs = np.zeros((res,res),dtype=int)
@@ -123,3 +123,71 @@ def PhaseDiagram(res,occ=True,tx=1,ty=1,tz=1):
             CNs[i,j] = C
 
     return CNs
+
+# finite system -- compute Chern number of surface BZ
+
+import weyl_green as wg
+
+
+
+
+def StatesFinite(size,res,index,t=1,g=0,tm=0,mu=-4,r=0):
+    """
+    Returns a grid of states
+    4 dimensions: [kx,ky,kz, 2 band]
+    occ is True (occupied band) or False (valence band)
+    """
+    # 0 if filled, 1 if valence
+    # if occ:
+    #     index = 0
+    # else:
+    #     index = 1
+
+    Hdim = int(2 * size) # <- 2 for spin, 2*size for size of sys
+
+    states = np.zeros((res,res,Hdim),dtype=complex)
+
+    for i in range(res):
+        kx = -np.pi + i * 2 * np.pi / res 
+        for j in range(res):
+            kz = -np.pi + j * 2 * np.pi / res 
+            Es, waves = np.linalg.eigh(wg.FullHamiltonian(size=size,kx=kx,kz=kz,t=t,g=g,tm=tm,mu=mu,r=r))
+            states[i,j,:] = waves[:,index]
+
+    return states
+
+def BerryFluxFinite(n,m,states,res):
+    """
+    Computes product
+    <u_{n,m}|u_{n+1,m}><u_{n+1,m}|u_{n+1,m+1}><u_{n+1,m+1}|u_{n,m+1}><u_{n,m+1}|u_{n,m}>
+    Returns the Wilson loop for a given kz
+    """
+    # for a given kz
+    # product over neighbouring sites
+    # imposing pbc by virtue of remainder division %
+    W = uij(states[n,m,:],states[(n+1)%res,m,:]) 
+    W *= uij(states[(n+1)%res,m,:],states[(n+1)%res,(m+1)%res,:])
+    W *= uij(states[(n+1)%res,(m+1)%res,:],states[n,(m+1)%res,:])
+    W *= uij(states[n,(m+1)%res,:],states[n,m,:])
+
+    return np.arctan2(W.imag,W.real) # might be a minus sign in front
+
+def ChernNumberFinite(size=10,res=10,index=0,t=1,g=0,tm=0,mu=-4,r=0):
+    """
+    Discrete sum over all plaquettes (n,m)
+    """
+    # Chern numbers
+    Q = 0
+
+    states = StatesFinite(size=size,res=res,index=index,t=t,g=g,tm=tm,mu=mu,r=r)
+
+    # Sum over all plaquettes
+    for n in range(res):
+        for m in range(res):
+            Fnm = BerryFluxFinite(n,m,states,res)
+            Q += Fnm
+    
+    Q /= 2 * np.pi
+
+    return Q
+

@@ -22,7 +22,7 @@ def WeylHamiltonian(size,kx,kz,tx,ty,tz,g,V0=0):
     Two-node minimal model
     Open in y, closed in x, z
     """
-    tr = +1 # -1 for TR, +1 for normal
+    tr = 1 # -1 for TR, +1 for normal
     # diagonals
     diags_x = np.asarray([tr * tx * np.sin(kx) for _ in range(size)])
     diags_z = np.asarray([(tz) * (2 + g - np.cos(kx) - np.cos(kz)) for _ in range(size)])

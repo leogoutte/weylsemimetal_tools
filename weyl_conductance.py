@@ -29,15 +29,15 @@ def AnalyticalConductance(kx,kz,t,g,tm,mu,r):
     
     # return np.real(G)
 
-    g1 = t * np.sin(kx)
-    g3 = t * (2 + g - np.cos(kx) - np.cos(kz))
-    Eg = np.sqrt(g1**2 + g3**2)
-    h0overtm = 2 * (2 - np.cos(kx) + np.cos(kz)) - mu
+    g1 = t * np.sin(kx) + 1j*0
+    g3 = t * (2 + g - np.cos(kx) - np.cos(kz)) + 1j*0
+    hm = 2 * tm * (3 - np.cos(kx) - np.cos(kz)) - mu + 1j*0
 
-    G = - 2 * g1 * r**2 / np.abs(1 - ((Eg**2 + 1)/(2*g3))**2) * 1 / np.abs(1 - (h0overtm / 2)**2)
+    G = r**2 * g1 * 2 / np.sqrt(4 * g3**2 - (g1**2 + g3**2 + 1)**2) * 1 / np.sqrt(4 * tm**2 - hm**2)
+
+    # G = -r**2 / kx * 1 / np.sqrt(12*tm**2 - 8*tm*mu + mu**2)
     
     return np.real(G)
-
 
 def Kron4(A,B,C,D):
     """
@@ -395,11 +395,12 @@ def ConductanceClosedVEnergy(size,res,Erange=1.5,kz=0,kx=0,t=1,g=0,tm=1,mu=0,r=0
 if __name__ == "__main__":
     size = 20
     res = 100
+    r = 2.3
     kz = 0
     t = 1
     g = 0
-    tm = 1
-    mu = 0
+    tm = 0
+    mu = -4
     Erange = 1.5
     rates = [0.5,1,1.5]
     rate = 1
@@ -408,7 +409,7 @@ if __name__ == "__main__":
     Es, Ts = ConductanceVEnergy(size=size,res=res,Erange=Erange,kz=kz,t=t,g=g,tm=tm,mu=mu,r=r,rate=rate)
     
     # save data
-    np.savetxt("conductance_data_0_r_{}.csv".format(r), (Es,Ts), delimiter=",")
+    np.savetxt("conductance_data_0_r_{}.csv".format(r), (Es0,Ts0), delimiter=",")
     np.savetxt("conductance_data_r_{}.csv".format(r), (Es,Ts), delimiter=",")
 
     # import sys
