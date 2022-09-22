@@ -256,6 +256,7 @@ def Conductance(size,E,kz,t,g,tm,mu,r,rate):
     """
     # 0^+
     eta = 0.001
+
     # define identity matrices
     I = np.eye(size)
     I_all = Kron3(I,I,Pauli(0))
@@ -263,7 +264,7 @@ def Conductance(size,E,kz,t,g,tm,mu,r,rate):
     # hamiltonians
     Hweyl = WeylHamiltonian(size=size,kz=kz,tx=t,ty=t,tz=t,g=g)
     Hmetal = MetalHamiltonian(size=size,kz=kz,tm=tm,mu=mu)
-    # H = FullHamiltonian(size=size,kz=kz,t=t,g=g,tm=tm,mu=mu,r=r)
+    # H = FullHamiltonian(size=size,kz=kz,t=t,g=g,tm=tm,mu=mu,r=r) # this has a size of 2*size^2 x 2*size^2
 
     # self-energies, lead energies, and transmission
 
@@ -274,11 +275,6 @@ def Conductance(size,E,kz,t,g,tm,mu,r,rate):
     # for delta(x,Lx)
     bottom_corner = np.zeros((size,size),dtype=complex)
     bottom_corner[-1,-1] = 1.
-
-    # matrix_for_y = np.zeros((size,size),dtype=complex)
-    # matrix_for_y[-1,-1] = 1
-    # matrix_for_y[-2,-2] = 1
-    # matrix_for_y[-3,-3] = 1
 
     # left lead is at x=0 and y=Ly
     left_lead_matrix = Kron3(top_corner,I,Pauli(0)) # geometry
@@ -303,7 +299,75 @@ def Conductance(size,E,kz,t,g,tm,mu,r,rate):
     TUN = T_dag @ Gmet @ T_dag.conj().T
 
     # inverse retarded Green function
-    GretInv = (E + 1j * eta) * I_all - Hweyl - TUN  - (SigmaLret + SigmaRret) # - Tunnelling @ Gmet @ Tunnelling.conj().T 
+    GretInv = (E + 1j * eta) * I_all - Hweyl - TUN - (SigmaLret + SigmaRret)
+    
+    Gret = np.linalg.inv(GretInv)
+    Gadv = Gret.conj().T
+
+    # putting everything together
+    Transfer = Gret @ GammaL @ Gadv @ GammaR
+
+    return np.real_if_close(np.trace(Transfer))
+
+def ConductanceFull(size,E,kz,t,g,tm,mu,r,rate):
+    """
+    Trace of transmission matrix defined in LB formalism
+    In units of e^2/h
+    """
+    # define full system size
+    size_full = int(2*size)
+
+    # 0^+
+    eta = 0.001
+
+    # define identity matrices
+    I = np.eye(size)
+    I_full = np.eye(size_full)
+    I_top = np.kron(np.array([[1,0],[0,0]]),I) # for y-dependencies in full Hamiltonian
+    I_all = Kron3(I,I_full,Pauli(0))
+
+    # hamiltonians
+    # Hweyl = WeylHamiltonian(size=size,kz=kz,tx=t,ty=t,tz=t,g=g)
+    # Hmetal = MetalHamiltonian(size=size,kz=kz,tm=tm,mu=mu)
+    H = FullHamiltonian(size=size,kz=kz,t=t,g=g,tm=tm,mu=mu,r=r) # this has a size of 2*size^2 x 2*size^2
+
+    # self-energies, lead energies, and transmission
+
+    # for delta(x,0)
+    top_corner = np.zeros((size,size),dtype=complex)
+    top_corner[0,0] = 1.
+
+    # for delta(x,Lx)
+    bottom_corner = np.zeros((size,size),dtype=complex)
+    bottom_corner[-1,-1] = 1.
+
+    # left lead is at x=0 and y=Ly
+    left_lead_matrix = Kron3(top_corner,I_full,Pauli(0)) # geometry
+
+    # right lead is at x=Lx and y=Ly
+    right_lead_matrix = Kron3(bottom_corner,I_full,Pauli(0))
+
+    SigmaLret = -1j * rate / 2 * left_lead_matrix
+    SigmaRret = -1j * rate / 2 * right_lead_matrix
+
+    GammaL = 1j * (SigmaLret - SigmaLret.conj().T)
+    GammaR = 1j * (SigmaRret - SigmaRret.conj().T)
+
+    # Green function
+
+    # metal green function (don't include Sigmas in this one)
+    # GmetInv = (E + 1j * eta) * I_all - Hmetal
+    # Gmet = np.linalg.inv(GmetInv) 
+
+    # tunnelling term
+    # T_dag = TunnellingMatrix(size_x=size,size_n=size,size_m=size,r=r)
+    # TUN = T_dag @ Gmet @ T_dag.conj().T
+
+    # inverse retarded Green function
+    # print(I_all.shape)
+    # print(H.shape)
+    # print(SigmaLret.shape)
+    GretInv = (E + 1j * eta) * I_all - H - (SigmaLret + SigmaRret)
     
     Gret = np.linalg.inv(GretInv)
     Gadv = Gret.conj().T
@@ -321,6 +385,21 @@ def ConductanceVEnergy(size,res,Erange,kz,t,g,tm,mu,r,rate):
         T = Conductance(size,E,kz,t,g,tm,mu,r,rate)
         Ts[i] = T
     return Es, Ts
+
+def SumConductance(size,res_es,t,g,tm,mu,r,rate):
+    # sum over kz
+    res_k = 50
+        
+    kzs = np.linspace(-np.pi,np.pi,num=res_k)
+    
+    Conductance = np.zeros((res_k,res_es),dtype=float)
+
+    for i in range(res_k):
+        kz = kzs[i]
+        Es, Ts = ConductanceVEnergy(size=size,res=res_es,Erange=1.5,kz=kz,t=t,g=g,tm=tm,mu=mu,r=r,rate=rate)
+        Conductance[i,:] = Ts
+
+    return Conductance
 
 def ConductanceClosed(size,E,kz,kx,t,g,tm,mu,r,rate):
     """
@@ -393,8 +472,8 @@ def ConductanceClosedVEnergy(size,res,Erange=1.5,kz=0,kx=0,t=1,g=0,tm=1,mu=0,r=0
 # Script to run on cluster
 
 if __name__ == "__main__":
-    size = 20
-    res = 100
+    size = 40
+    res = 50
     r = 2.3
     kz = 0
     t = 1
@@ -402,7 +481,6 @@ if __name__ == "__main__":
     tm = 0
     mu = -4
     Erange = 1.5
-    rates = [0.5,1,1.5]
     rate = 1
 
     Es0, Ts0 = ConductanceVEnergy(size=size,res=res,Erange=Erange,kz=kz,t=t,g=g,tm=tm,mu=mu,r=0,rate=rate)
@@ -412,18 +490,13 @@ if __name__ == "__main__":
     np.savetxt("conductance_data_0_r_{}.csv".format(r), (Es0,Ts0), delimiter=",")
     np.savetxt("conductance_data_r_{}.csv".format(r), (Es,Ts), delimiter=",")
 
-    # import sys
-    # Es = np.linspace(-Erange,Erange,num=res)
-    # # get Es from argv
-    # args = sys.argv
-    # idx = int(args[1])
-    # E = Es[idx]
 
-    # for i in range(3):
-    #     rate = rates[i]
-    #     T = Conductance(size,E,kz,t,g,rate)
-    #     with open("conductance_data_rate_{}.csv".format(rate), "a") as f:
-    #         np.savetxt(f, (E,T), delimiter=",")
+    # G0 = SumConductance(size=20,res_es=100,t=1,g=0,tm=0,mu=-4,r=0,rate=1)
+    # G23 = SumConductance(size=20,res_es=100,t=1,g=0,tm=0,mu=-4,r=2.3,rate=1)
+
+    # np.savetxt("conductance_sum_0.csv", G0, delimiter=",")
+    # np.savetxt("conductance_sum_23.csv", G23, delimiter=",")
+
 
 ### LPBG
 

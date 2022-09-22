@@ -85,7 +85,7 @@ def FullHamiltonian(size,kx,kz,t,g,tm,mu,r):
     Hamiltonian for Bulk WSM - Bulk Metal system
     """
     # size of each sample
-    new_size = int(size/2) # <- this won't actually add up to size, but ok
+    new_size = int(size/2)
 
     # diagonals
     HWSM = WeylHamiltonian(size=new_size,kx=kx,kz=kz,tx=t,ty=t,tz=t,g=g)
@@ -100,6 +100,97 @@ def FullHamiltonian(size,kx,kz,t,g,tm,mu,r):
     MAT = diags + off_diag
 
     return MAT
+
+def FullHamiltonianTwoBands(size,kx,kz,t,g,tm,mu,r):
+    """
+    Hamiltonian for WSM-Semiconductor system
+    physical size of system is 2*size, real size of matrix is 3*size
+    """
+    # diagonals
+    HWSM = WeylHamiltonian(size=size,kx=kx,kz=kz,tx=t,ty=t,tz=t,g=g)
+    HMetalPlus =  MetalHamiltonian(size=size,kx=kx,kz=kz,t=tm,mu=mu) 
+    HMetalMinus = MetalHamiltonian(size=size,kx=kx,kz=kz,t=-tm,mu=-mu) # flip the sign
+
+    top = np.array([[1,0,0],[0,0,0],[0,0,0]])
+    mid = np.array([[0,0,0],[0,1,0],[0,0,0]])
+    bot = np.array([[0,0,0],[0,0,0],[0,0,1]])
+
+    diags = np.kron(top,HWSM) + np.kron(mid,HMetalPlus) + np.kron(bot,HMetalMinus)
+
+    # tunneling
+    Tun_upper = TunnellingMatrix(size,size,r)
+    linkplus = np.array([[0,1,0],[0,0,0],[0,0,0]])
+    linkminus = np.array([[0,0,1],[0,0,0],[0,0,0]])
+    off_diag = np.kron(linkplus,Tun_upper) + np.kron(linkminus,Tun_upper)
+    off_diag_total = off_diag + off_diag.conj().T 
+
+    MAT = diags + off_diag_total
+
+
+    return MAT
+
+# function to determine if surface state == True
+def Localized(wave,pos,side=0):
+    """
+    Is the wavefunction localized to position pos?
+    Equipped to handle array where W[:,i] is ith wave
+    """
+    
+    # make wave into what it was Born to be: probability
+    prob = np.abs(wave)**2
+    prob_norm = prob / np.sum(prob, axis=0)
+
+    # localization condition: 90% of wave is in 10% of side
+    # too strong?
+    length = wave.shape[0]
+    cut = int(length/20)
+    condition = 0.9
+    prob = np.sum(prob_norm[pos-cut:pos+cut], axis=0)
+    # prob_left = np.sum(prob_norm[0:cut,:], axis=0) # for pos = 0 (original function)
+    # prob_right = np.sum(prob_norm[length-cut:length-1,:], axis=0)
+
+    # make returns
+    loc = prob > condition
+
+    return loc
+
+    # left = prob_left > condition
+    # right = prob_right > condition
+
+    # # localized on both ends
+    # if side == 0:
+    #     return np.logical_or(left,right)
+    
+    # # only localized on right side
+    # elif side == 1:
+    #     return right
+
+    # # only localized on left side
+    # elif side == -1:
+    #     return left
+
+def SpectrumTwoBands(size,res,krange,kz,t,g,tm,mu,r):
+    """
+    Energy spectrum for FullHamiltonian
+    """
+    kxs = np.linspace(-krange,krange,res)
+
+    # matrix size
+    mat_size = int(3 * size)
+    kxs_ret = np.zeros((2*mat_size,res),dtype=float)
+    Es = np.zeros((2*mat_size,res),dtype=float)
+    locs = np.zeros((2*mat_size,res),dtype=bool)
+
+    for i in range(res):
+        kx = kxs[i]
+        H = FullHamiltonianTwoBands(size,kx,kz,t,g,tm,mu,r)
+        E, Ws = np.linalg.eigh(H)
+        loc = Localized(Ws,int(2*size-1)) # pos = (2 * size) / 2
+        Es[:,i] = E
+        kxs_ret[:,i] = np.repeat(kx,2*mat_size)
+        locs[:,i] = loc
+
+    return kxs_ret, Es, locs
 
 def FullHamiltonianBis(size,kx,kz,t,g,mu,r):
     """
@@ -130,18 +221,18 @@ def Spectrum(size,res,krange,kz,t,g,tm,mu,r,bulk=0):
     """
     size += bulk
     kxs = np.linspace(-krange,krange,res)
-    kxs_ret = np.zeros((2*size,res),dtype=float)
-    Es = np.zeros((2*size,res),dtype=float)
-    locs = np.zeros((2*size,res),dtype=bool)
+    kxs_ret = np.zeros(int(2*size*res),dtype=float)
+    Es = np.zeros(int(2*size*res),dtype=float)
+    locs = np.zeros(int(2*size*res),dtype=bool)
 
     for i in range(res):
         kx = kxs[i]
         H = FullHamiltonian(size,kx,kz,t,g,tm,mu,r)
         E, Ws = np.linalg.eigh(H)
         loc = Localized(Ws,int(size)) # pos = (2 * size) / 2
-        Es[:,i] = E
-        kxs_ret[:,i] = np.repeat(kx,2*size)
-        locs[:,i] = loc
+        Es[i*2*size:(i+1)*2*size] = E
+        kxs_ret[i*2*size:(i+1)*2*size] = np.repeat(kx,2*size)
+        locs[i*2*size:(i+1)*2*size] = loc
 
     return kxs_ret, Es, locs
 
@@ -370,46 +461,6 @@ def SpectralFunctionWeylKK(w,size,res,krange,kx,t=1,g=0,tm=1,mu=0,r=0.5,spin=0):
     return As
 
 # Surface system
-
-# function to determine if surface state == True
-def Localized(wave,pos,side=0):
-    """
-    Is the wavefunction localized to position pos?
-    Equipped to handle array where W[:,i] is ith wave
-    """
-    
-    # make wave into what it was Born to be: probability
-    prob = np.abs(wave)**2
-    prob_norm = prob / np.sum(prob, axis=0)
-
-    # localization condition: 90% of wave is in 10% of side
-    # too strong?
-    length = wave.shape[0]
-    cut = int(length/10)
-    condition = 0.9
-    prob = np.sum(prob_norm[pos-cut:pos+cut], axis=0)
-    # prob_left = np.sum(prob_norm[0:cut,:], axis=0) # for pos = 0 (original function)
-    # prob_right = np.sum(prob_norm[length-cut:length-1,:], axis=0)
-
-    # make returns
-    loc = prob > condition
-
-    return loc
-
-    # left = prob_left > condition
-    # right = prob_right > condition
-
-    # # localized on both ends
-    # if side == 0:
-    #     return np.logical_or(left,right)
-    
-    # # only localized on right side
-    # elif side == 1:
-    #     return right
-
-    # # only localized on left side
-    # elif side == -1:
-    #     return left
 
 def SurfaceSpectralFunctionWeyl(w,size,kx,kz,t,g,tm,mu,r,side=0,spin=0):
     """

@@ -291,16 +291,16 @@ def SpinRealSpace(state,size):
     for i in range(size):
         # take correct spin state
         state_ = state[2*i:2*(i+1)] / np.sqrt(np.sum(np.abs(state[2*i:2*(i+1)])**2))
-        if state_ .all() == 0:
+        if state_.all() == 0:
             spinsX[i] = 0
             spinsY[i] = 0
             spinsZ[i] = 0
         else:
             # compute expectation values
-            # they are all real, discard complex
-            spinsX[i] = np.real(np.dot(state_.conj().T,np.dot(Pauli(1),state_)))
-            spinsY[i] = np.real(np.dot(state_.conj().T,np.dot(Pauli(2),state_)))
-            spinsZ[i] = np.real(np.dot(state_.conj().T,np.dot(Pauli(3),state_)))
+            # they are all real, discard imaginary
+            spinsX[i] = (np.dot(state_.conj().T,np.dot(Pauli(1),state_)))
+            spinsY[i] = (np.dot(state_.conj().T,np.dot(Pauli(2),state_)))
+            spinsZ[i] = (np.dot(state_.conj().T,np.dot(Pauli(3),state_)))
 
     return spinsX, spinsY, spinsZ
 
